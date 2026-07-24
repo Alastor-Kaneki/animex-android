@@ -25,8 +25,6 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
-import android.webkit.JsPromptResult;
-import android.webkit.JsResult;
 import android.webkit.DownloadListener;
 import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
@@ -86,6 +84,7 @@ public final class MainActivity extends Activity {
         loadBlockList();
         createUi();
         configureWebView(webView, true);
+        hideStatusBar();
 
         if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
             webView.loadUrl(HOME_URL);
@@ -121,17 +120,19 @@ public final class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setLoadsImagesAutomatically(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(!popupBlockEnabled());
-        settings.setSupportMultipleWindows(!popupBlockEnabled());
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(true);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        settings.setSupportZoom(false);
+        settings.setTextZoom(100);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.4");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
         }
@@ -151,8 +152,8 @@ public final class MainActivity extends Activity {
 
     private void refreshPopupSettings() {
         WebSettings settings = webView.getSettings();
-        settings.setJavaScriptCanOpenWindowsAutomatically(!popupBlockEnabled());
-        settings.setSupportMultipleWindows(!popupBlockEnabled());
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(true);
     }
 
     private boolean adBlockEnabled() {
@@ -361,7 +362,9 @@ public final class MainActivity extends Activity {
     }
 
     private boolean shouldBlockMainFrame(Uri uri) {
-        return popupBlockEnabled() && !isTrustedMainFrameUrl(uri);
+        return popupBlockEnabled()
+                && uri != null
+                && isBlockedUrl(uri.toString());
     }
 
     private WebResourceResponse emptyResponse() {
@@ -554,6 +557,16 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         webView.onResume();
+        hideStatusBar();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+
+        if (hasFocus && fullScreenView == null) {
+            hideStatusBar();
+        }
     }
 
     @Override
@@ -605,9 +618,30 @@ public final class MainActivity extends Activity {
             getActionBar().show();
         }
         showSystemBars();
+        hideStatusBar();
         if (fullScreenCallback != null) {
             fullScreenCallback.onCustomViewHidden();
             fullScreenCallback = null;
+        }
+    }
+
+    private void hideStatusBar() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller =
+                    getWindow().getInsetsController();
+
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars());
+                controller.setSystemBarsBehavior(
+                        WindowInsetsController
+                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN |
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         }
     }
 
@@ -715,8 +749,7 @@ public final class MainActivity extends Activity {
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture,
                                       Message resultMsg) {
-            if (popupBlockEnabled()) {
-                Toast.makeText(MainActivity.this, "Popup blocked", Toast.LENGTH_SHORT).show();
+            if (!isUserGesture) {
                 return false;
             }
 
@@ -732,9 +765,16 @@ public final class MainActivity extends Activity {
                         return true;
                     }
                     Uri uri = Uri.parse(url);
+
+                    if (!isTrustedMainFrameUrl(uri)) {
+                        popup.destroy();
+                        return true;
+                    }
+
                     if (!handleSpecialScheme(uri)) {
                         webView.loadUrl(url);
                     }
+
                     popup.destroy();
                     return true;
                 }
@@ -755,46 +795,6 @@ public final class MainActivity extends Activity {
             transport.setWebView(popup);
             resultMsg.sendToTarget();
             return true;
-        }
-
-        @Override
-        public boolean onJsAlert(
-                WebView view,
-                String url,
-                String message,
-                JsResult result) {
-            if (popupBlockEnabled()) {
-                result.cancel();
-                return true;
-            }
-            return false;
-        }
-
-        @Override
-        public boolean onJsConfirm(
-                WebView view,
-                String url,
-                String message,
-                JsResult result) {
-            if (popupBlockEnabled()) {
-                result.cancel();
-                return true;
-            }
-            return false;
-        }
-
-        @Override
-        public boolean onJsPrompt(
-                WebView view,
-                String url,
-                String message,
-                String defaultValue,
-                JsPromptResult result) {
-            if (popupBlockEnabled()) {
-                result.cancel();
-                return true;
-            }
-            return false;
         }
 
         @Override
