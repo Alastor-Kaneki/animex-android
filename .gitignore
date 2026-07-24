@@ -1,0 +1,7 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+animex-release.jks
+SIGNING-KEY.txt
