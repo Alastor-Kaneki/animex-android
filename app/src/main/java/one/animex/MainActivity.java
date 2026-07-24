@@ -25,6 +25,8 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
+import android.webkit.JsPromptResult;
+import android.webkit.JsResult;
 import android.webkit.DownloadListener;
 import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
@@ -70,12 +72,15 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileChooserCallback;
     private SharedPreferences preferences;
     private final Set<String> blockedHosts = Collections.synchronizedSet(new HashSet<>());
+    private String protectionTemplate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         setTheme(R.style.Theme_Animex);
         super.onCreate(savedInstanceState);
-        setTitle("Animex");
+        if (getActionBar() != null) {
+            getActionBar().hide();
+        }
 
         preferences = getSharedPreferences("animex_settings", MODE_PRIVATE);
         loadBlockList();
@@ -151,11 +156,11 @@ public final class MainActivity extends Activity {
     }
 
     private boolean adBlockEnabled() {
-        return preferences.getBoolean("adblock", true);
+        return true;
     }
 
     private boolean popupBlockEnabled() {
-        return preferences.getBoolean("popup_block", true);
+        return true;
     }
 
     private void loadBlockList() {
@@ -174,28 +179,189 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private boolean hostMatches(String host, String base) {
+        return host.equals(base) || host.endsWith("." + base);
+    }
+
+    private boolean isLikelyAdvertisingHost(String host) {
+        if (host == null) {
+            return false;
+        }
+
+        String normalized = host.toLowerCase(Locale.US).replace("-", "");
+
+        String[] tokens = {
+                "adserver",
+                "adservice",
+                "adnetwork",
+                "adsyndication",
+                "adsystem",
+                "adsterra",
+                "propellerads",
+                "popunder",
+                "popcash",
+                "popads",
+                "monetag",
+                "exoclick",
+                "clickadu",
+                "clickaine",
+                "onclicka",
+                "trafficjunky",
+                "revenuecpm",
+                "effectivecpm",
+                "highperformanceformat",
+                "highperformancedisplayformat",
+                "analytics",
+                "telemetry",
+                "tracking"
+        };
+
+        for (String token : tokens) {
+            if (normalized.contains(token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isLikelyAdvertisingPath(String value) {
+        if (value == null) {
+            return false;
+        }
+
+        String lower = value.toLowerCase(Locale.US);
+
+        String[] patterns = {
+                "/popunder",
+                "/pop-up",
+                "/popup",
+                "/clickunder",
+                "/adserver",
+                "/adserve",
+                "/ad-delivery",
+                "/ads/",
+                "/advert/",
+                "/advertisement/",
+                "/interstitial",
+                "/preroll",
+                "/pre-roll",
+                "/vast.xml",
+                "/vast?",
+                "vast-ad",
+                "video-ad",
+                "banner-ad",
+                "onclickad"
+        };
+
+        for (String pattern : patterns) {
+            if (lower.contains(pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private boolean isBlockedUrl(String value) {
         if (!adBlockEnabled() || value == null) {
             return false;
         }
+
         try {
             URI uri = new URI(value);
             String host = uri.getHost();
-            if (host == null) {
-                return false;
-            }
-            host = host.toLowerCase(Locale.US);
-            synchronized (blockedHosts) {
-                for (String blocked : blockedHosts) {
-                    if (host.equals(blocked) || host.endsWith("." + blocked)) {
-                        return true;
+
+            if (host != null) {
+                host = host.toLowerCase(Locale.US);
+
+                if (isLikelyAdvertisingHost(host)) {
+                    return true;
+                }
+
+                synchronized (blockedHosts) {
+                    for (String blocked : blockedHosts) {
+                        if (hostMatches(host, blocked)) {
+                            return true;
+                        }
                     }
                 }
             }
+
+            return isLikelyAdvertisingPath(value);
         } catch (Exception ignored) {
-            // Malformed URLs are handled normally by WebView.
+            return isLikelyAdvertisingPath(value);
         }
+    }
+
+    private boolean isTrustedMainFrameUrl(Uri uri) {
+        if (uri == null) {
+            return false;
+        }
+
+        String scheme = uri.getScheme();
+
+        if (scheme == null) {
+            return false;
+        }
+
+        scheme = scheme.toLowerCase(Locale.US);
+
+        if (scheme.equals("about") ||
+                scheme.equals("data") ||
+                scheme.equals("blob")) {
+            return true;
+        }
+
+        if (!scheme.equals("http") && !scheme.equals("https")) {
+            return true;
+        }
+
+        String host = uri.getHost();
+
+        if (host == null) {
+            return false;
+        }
+
+        host = host.toLowerCase(Locale.US);
+
+        String[] trustedHosts = {
+                "animex.one",
+
+                // Common account and OAuth providers.
+                "accounts.google.com",
+                "google.com",
+                "discord.com",
+                "anilist.co",
+                "myanimelist.net",
+                "github.com",
+                "appleid.apple.com",
+                "microsoftonline.com",
+
+                // Common hosted authentication services.
+                "auth0.com",
+                "supabase.co",
+                "supabase.com",
+                "clerk.com",
+                "clerk.accounts.dev",
+
+                // Human-verification pages used during sign-in.
+                "cloudflare.com",
+                "hcaptcha.com",
+                "recaptcha.net"
+        };
+
+        for (String trusted : trustedHosts) {
+            if (hostMatches(host, trusted)) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    private boolean shouldBlockMainFrame(Uri uri) {
+        return popupBlockEnabled() && !isTrustedMainFrameUrl(uri);
     }
 
     private WebResourceResponse emptyResponse() {
@@ -205,24 +371,42 @@ public final class MainActivity extends Activity {
                 new ByteArrayInputStream(new byte[0]));
     }
 
+    private String readAssetText(String name) {
+        StringBuilder result = new StringBuilder();
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(
+                        getAssets().open(name),
+                        StandardCharsets.UTF_8))) {
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                result.append(line).append('\n');
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+
+        return result.toString();
+    }
+
     private void injectPageProtection() {
         if (!adBlockEnabled() && !popupBlockEnabled()) {
             return;
         }
 
-        String popupCode = popupBlockEnabled()
-                ? "try{window.open=function(){return null;};" +
-                  "document.querySelectorAll('a[target=\"_blank\"]').forEach(function(a){a.removeAttribute('target');a.removeAttribute('rel');});}catch(e){}"
-                : "";
+        if (protectionTemplate == null) {
+            protectionTemplate = readAssetText("protection.js");
+        }
 
-        String adCode = adBlockEnabled()
-                ? "var selectors=['ins.adsbygoogle','[id^=\"google_ads\"]','[class*=\"ad-container\"]','[class*=\"ad_banner\"]','[class*=\"advertisement\"]','[class*=\"sponsor\"]','iframe[src*=\"doubleclick\"]','iframe[src*=\"adsterra\"]','iframe[src*=\"popads\"]','iframe[src*=\"monetag\"]','iframe[src*=\"exoclick\"]'];" +
-                  "function clean(){try{selectors.forEach(function(q){document.querySelectorAll(q).forEach(function(e){e.remove();});});}catch(e){}}" +
-                  "clean();new MutationObserver(clean).observe(document.documentElement||document.body,{childList:true,subtree:true});"
-                : "";
+        if (protectionTemplate == null || protectionTemplate.isEmpty()) {
+            return;
+        }
 
-        String script = "(function(){if(window.__animexProtection)return;window.__animexProtection=true;" +
-                popupCode + adCode + "})();";
+        String script = protectionTemplate
+                .replace("__ADBLOCK__", adBlockEnabled() ? "true" : "false")
+                .replace("__POPUPBLOCK__", popupBlockEnabled() ? "true" : "false");
+
         webView.evaluateJavascript(script, null);
     }
 
@@ -468,6 +652,11 @@ public final class MainActivity extends Activity {
         }
 
         @Override
+        public void onPageCommitVisible(WebView view, String url) {
+            injectPageProtection();
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
             progress.setVisibility(View.GONE);
             injectPageProtection();
@@ -476,19 +665,46 @@ public final class MainActivity extends Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
+
+            if (request.isForMainFrame() && shouldBlockMainFrame(uri)) {
+                String host = uri.getHost();
+                Toast.makeText(
+                        MainActivity.this,
+                        host == null
+                                ? "Redirect blocked"
+                                : "Blocked redirect to " + host,
+                        Toast.LENGTH_SHORT).show();
+                return true;
+            }
+
             if (isBlockedUrl(uri.toString())) {
                 return true;
             }
+
             return handleSpecialScheme(uri);
         }
 
         @SuppressWarnings("deprecation")
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            Uri uri = Uri.parse(url);
+
+            if (shouldBlockMainFrame(uri)) {
+                String host = uri.getHost();
+                Toast.makeText(
+                        MainActivity.this,
+                        host == null
+                                ? "Redirect blocked"
+                                : "Blocked redirect to " + host,
+                        Toast.LENGTH_SHORT).show();
+                return true;
+            }
+
             if (isBlockedUrl(url)) {
                 return true;
             }
-            return handleSpecialScheme(Uri.parse(url));
+
+            return handleSpecialScheme(uri);
         }
 
         @Override
@@ -553,6 +769,46 @@ public final class MainActivity extends Activity {
             transport.setWebView(popup);
             resultMsg.sendToTarget();
             return true;
+        }
+
+        @Override
+        public boolean onJsAlert(
+                WebView view,
+                String url,
+                String message,
+                JsResult result) {
+            if (popupBlockEnabled()) {
+                result.cancel();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean onJsConfirm(
+                WebView view,
+                String url,
+                String message,
+                JsResult result) {
+            if (popupBlockEnabled()) {
+                result.cancel();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean onJsPrompt(
+                WebView view,
+                String url,
+                String message,
+                String defaultValue,
+                JsPromptResult result) {
+            if (popupBlockEnabled()) {
+                result.cancel();
+                return true;
+            }
+            return false;
         }
 
         @Override
