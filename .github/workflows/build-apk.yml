@@ -26,14 +26,14 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Install Android SDK 35
+      - name: Verify Android SDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/platforms"
+          ls -la "$ANDROID_HOME/build-tools"
+          test -d "$ANDROID_HOME/platforms/android-35"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
 
       - name: Build signed release APK
         shell: bash
@@ -42,7 +42,7 @@ jobs:
           gradle \
             --no-daemon \
             --stacktrace \
-            --info \
+            --warning-mode all \
             clean assembleRelease 2>&1 | tee build.log
 
       - name: Upload APK
