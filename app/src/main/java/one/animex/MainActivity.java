@@ -131,7 +131,7 @@ public final class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.3");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
         }
@@ -667,13 +667,6 @@ public final class MainActivity extends Activity {
             Uri uri = request.getUrl();
 
             if (request.isForMainFrame() && shouldBlockMainFrame(uri)) {
-                String host = uri.getHost();
-                Toast.makeText(
-                        MainActivity.this,
-                        host == null
-                                ? "Redirect blocked"
-                                : "Blocked redirect to " + host,
-                        Toast.LENGTH_SHORT).show();
                 return true;
             }
 
@@ -690,13 +683,6 @@ public final class MainActivity extends Activity {
             Uri uri = Uri.parse(url);
 
             if (shouldBlockMainFrame(uri)) {
-                String host = uri.getHost();
-                Toast.makeText(
-                        MainActivity.this,
-                        host == null
-                                ? "Redirect blocked"
-                                : "Blocked redirect to " + host,
-                        Toast.LENGTH_SHORT).show();
                 return true;
             }
 
