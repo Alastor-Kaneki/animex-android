@@ -3,6 +3,51 @@
 
     const adBlock = __ADBLOCK__;
 
+    function installNativeStyle() {
+        let style = document.getElementById("animex-native-style");
+
+        if (style) {
+            return;
+        }
+
+        style = document.createElement("style");
+        style.id = "animex-native-style";
+
+        style.textContent = `
+            html,
+            body {
+                overscroll-behavior-x: none !important;
+                overscroll-behavior-y: none !important;
+                overscroll-behavior: none !important;
+            }
+
+            a,
+            button,
+            input,
+            textarea,
+            select,
+            label,
+            summary,
+            [role="button"],
+            [role="link"],
+            [tabindex] {
+                touch-action: manipulation;
+                -webkit-tap-highlight-color:
+                    rgba(255, 255, 255, 0.08);
+            }
+
+            img,
+            video {
+                max-width: 100%;
+            }
+        `;
+
+        (document.head || document.documentElement)
+            .appendChild(style);
+    }
+
+    installNativeStyle();
+
     if (!adBlock) {
         return;
     }
@@ -28,31 +73,87 @@
         "iframe[src*='highperformanceformat']"
     ];
 
+    const adMarkers = [
+        "adserver",
+        "adservice",
+        "adsterra",
+        "doubleclick",
+        "googlesyndication",
+        "popunder",
+        "popcash",
+        "popads",
+        "monetag",
+        "exoclick",
+        "clickadu",
+        "propellerads",
+        "revenuecpm",
+        "effectivecpm",
+        "highperformanceformat",
+        "trafficjunky",
+        "onclicka"
+    ];
+
+    function containsAdMarker(value) {
+        const lower = String(value || "").toLowerCase();
+
+        return adMarkers.some(function (marker) {
+            return lower.includes(marker);
+        });
+    }
+
     function looksLikeAdFrame(frame) {
         try {
-            const source = String(frame.src || "").toLowerCase();
+            return containsAdMarker(frame.src);
+        } catch (_) {
+            return false;
+        }
+    }
 
-            const markers = [
-                "adserver",
-                "adservice",
-                "adsterra",
-                "doubleclick",
-                "googlesyndication",
-                "popunder",
-                "popcash",
-                "popads",
-                "monetag",
-                "exoclick",
-                "clickadu",
-                "propellerads",
-                "revenuecpm",
-                "effectivecpm",
-                "highperformanceformat"
-            ];
+    function looksLikeTransparentClickCatcher(anchor) {
+        try {
+            if (!anchor || anchor.tagName !== "A") {
+                return false;
+            }
 
-            return markers.some(function (marker) {
-                return source.includes(marker);
-            });
+            if (anchor.closest(
+                    "nav,header,footer,form,dialog," +
+                    "[role='dialog'],[role='menu']")) {
+                return false;
+            }
+
+            const href = String(anchor.href || "");
+
+            if (containsAdMarker(href)) {
+                return true;
+            }
+
+            const rect = anchor.getBoundingClientRect();
+            const style = window.getComputedStyle(anchor);
+
+            const coversLargeArea =
+                rect.width >= window.innerWidth * 0.65 &&
+                rect.height >= window.innerHeight * 0.45;
+
+            const positionedOverPage =
+                style.position === "fixed" ||
+                style.position === "absolute";
+
+            const nearlyInvisible =
+                Number.parseFloat(style.opacity || "1") <= 0.05 ||
+                style.visibility === "hidden";
+
+            const noUsefulContent =
+                !String(anchor.textContent || "").trim() &&
+                !anchor.querySelector(
+                    "img,video,button,input,textarea,select"
+                );
+
+            return (
+                coversLargeArea &&
+                positionedOverPage &&
+                nearlyInvisible &&
+                noUsefulContent
+            );
         } catch (_) {
             return false;
         }
@@ -75,23 +176,46 @@
                         frame.remove();
                     }
                 });
+
+            document
+                .querySelectorAll("a[href]")
+                .forEach(function (anchor) {
+                    if (looksLikeTransparentClickCatcher(anchor)) {
+                        anchor.style.pointerEvents = "none";
+                        anchor.remove();
+                    }
+                });
         } catch (_) {}
     }
 
     cleanAds();
 
-    if (!window.__animexAdObserver) {
-        window.__animexAdObserver =
+    requestAnimationFrame(cleanAds);
+
+    if (!window.__animexNativeObserver) {
+        window.__animexNativeObserver =
             new MutationObserver(function () {
-                cleanAds();
+                requestAnimationFrame(cleanAds);
             });
 
-        window.__animexAdObserver.observe(
+        window.__animexNativeObserver.observe(
             document.documentElement || document.body,
             {
                 childList: true,
-                subtree: true
+                subtree: true,
+                attributes: true,
+                attributeFilter: [
+                    "src",
+                    "href",
+                    "style",
+                    "class"
+                ]
             }
         );
+    }
+
+    if (!window.__animexCleanupTimer) {
+        window.__animexCleanupTimer =
+            window.setInterval(cleanAds, 750);
     }
 })();

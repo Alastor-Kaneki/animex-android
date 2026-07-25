@@ -20,6 +20,7 @@ import android.os.Message;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -126,13 +127,14 @@ public final class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
         settings.setTextZoom(100);
-        settings.setLoadWithOverviewMode(true);
+        settings.setLoadWithOverviewMode(false);
         settings.setUseWideViewPort(true);
+        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.4");
+        settings.setUserAgentString(settings.getUserAgentString() + " AnimexApp/0.5");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
         }
@@ -142,6 +144,32 @@ public final class MainActivity extends Activity {
         cookies.setAcceptThirdPartyCookies(target, true);
 
         target.setBackgroundColor(0xFF000000);
+
+        // Remove Android's elastic/stretch overscroll effect.
+        target.setOverScrollMode(View.OVER_SCROLL_NEVER);
+
+        // Hide browser-like scrollbars.
+        target.setVerticalScrollBarEnabled(false);
+        target.setHorizontalScrollBarEnabled(false);
+        target.setScrollbarFadingEnabled(true);
+        target.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+
+        // Make the WebView receive focus immediately instead of requiring
+        // an initial focus tap followed by a second activation tap.
+        target.setFocusable(true);
+        target.setFocusableInTouchMode(true);
+        target.requestFocus(View.FOCUS_DOWN);
+
+        target.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN &&
+                    !view.hasFocus()) {
+                view.requestFocus();
+            }
+
+            // Never consume the event. The website still receives the tap.
+            return false;
+        });
+
         if (primary) {
             target.setWebViewClient(new AnimexWebViewClient());
             target.setWebChromeClient(new AnimexChromeClient());
@@ -411,6 +439,22 @@ public final class MainActivity extends Activity {
                 .replace("__POPUPBLOCK__", popupBlockEnabled() ? "true" : "false");
 
         webView.evaluateJavascript(script, null);
+    }
+
+    private void schedulePageProtection() {
+        injectPageProtection();
+
+        webView.postDelayed(
+                this::injectPageProtection,
+                150);
+
+        webView.postDelayed(
+                this::injectPageProtection,
+                500);
+
+        webView.postDelayed(
+                this::injectPageProtection,
+                1200);
     }
 
     private void openExternal(String url) {
@@ -687,13 +731,13 @@ public final class MainActivity extends Activity {
 
         @Override
         public void onPageCommitVisible(WebView view, String url) {
-            injectPageProtection();
+            schedulePageProtection();
         }
 
         @Override
         public void onPageFinished(WebView view, String url) {
             progress.setVisibility(View.GONE);
-            injectPageProtection();
+            schedulePageProtection();
         }
 
         @Override
