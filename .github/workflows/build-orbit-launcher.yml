@@ -51,10 +51,25 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Set up Gradle 8.13
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.13"
+      # Do not use gradle/actions/setup-gradle here. That action scans every
+      # wrapper JAR in the repository and rejects Orbit Launcher's custom
+      # Termux bootstrap wrapper before the build can begin. Install the
+      # official Gradle distribution directly instead.
+      - name: Install Gradle 8.13
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRADLE_DIR="$RUNNER_TEMP/gradle-8.13"
+          GRADLE_ZIP="$RUNNER_TEMP/gradle-8.13-bin.zip"
+
+          curl --fail --location --retry 4 --retry-delay 3 \
+            --output "$GRADLE_ZIP" \
+            "https://services.gradle.org/distributions/gradle-8.13-bin.zip"
+
+          unzip -q "$GRADLE_ZIP" -d "$RUNNER_TEMP"
+          test -x "$GRADLE_DIR/bin/gradle"
+          echo "$GRADLE_DIR/bin" >> "$GITHUB_PATH"
+          "$GRADLE_DIR/bin/gradle" --version
 
       - name: Validate project
         shell: bash
