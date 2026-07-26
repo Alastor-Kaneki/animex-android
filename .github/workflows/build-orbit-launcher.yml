@@ -51,8 +51,6 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # Direct installation avoids wrapper validation rejecting the custom
-      # Termux bootstrap wrapper stored with the project.
       - name: Install Gradle 8.13
         shell: bash
         run: |
@@ -69,7 +67,7 @@ jobs:
           echo "$GRADLE_DIR/bin" >> "$GITHUB_PATH"
           "$GRADLE_DIR/bin/gradle" --version
 
-      - name: Validate and patch project
+      - name: Apply launcher performance and appearance update
         shell: bash
         env:
           PROJECT_PATH: ${{ inputs.project_path }}
@@ -78,27 +76,21 @@ jobs:
           test -f "$PROJECT_PATH/settings.gradle.kts"
           test -f "$PROJECT_PATH/app/build.gradle.kts"
 
+          PATCH_B64="$GITHUB_WORKSPACE/orbit-launcher-build/orbit-appearance-performance-patch.b64"
+          PATCH_ARCHIVE="$RUNNER_TEMP/orbit-launcher-update.tgz"
+
+          test -f "$PATCH_B64"
+          tr -d '[:space:]' < "$PATCH_B64" | base64 --decode > "$PATCH_ARCHIVE"
+          echo "56993a1616fa14b0d269ad863f573911b5b9c84a7833cbc697c32d3da857917b  $PATCH_ARCHIVE" | sha256sum -c -
+          tar -xzf "$PATCH_ARCHIVE" -C "$PROJECT_PATH"
+
           MAIN_ACTIVITY="$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/MainActivity.kt"
           test -f "$MAIN_ACTIVITY"
-
-          # Correct the Android framework package. RoleManager was introduced
-          # under android.app.role, not android.app.
-          sed -i \
-            's/^import android\.app\.RoleManager$/import android.app.role.RoleManager/' \
-            "$MAIN_ACTIVITY"
-
-          # Modifier.weight is supplied by RowScope/ColumnScope. Explicitly
-          # importing this package-level symbol selects an internal API with
-          # current Compose releases.
-          sed -i \
-            '/^import androidx\.compose\.foundation\.layout\.weight$/d' \
-            "$MAIN_ACTIVITY"
-
           grep -q '^import android.app.role.RoleManager$' "$MAIN_ACTIVITY"
-          if grep -q '^import androidx.compose.foundation.layout.weight$' "$MAIN_ACTIVITY"; then
-            echo "The invalid weight import is still present." >&2
-            exit 1
-          fi
+          grep -q 'FLAG_SHOW_WALLPAPER' "$MAIN_ACTIVITY"
+          grep -q 'MAX_VISIBLE_NODES = 48' "$MAIN_ACTIVITY"
+          grep -q 'dynamicDarkColorScheme' "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/ui/theme/Theme.kt"
+          test -f "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/model/IconPackOption.kt"
 
       - name: Build APK
         id: build
