@@ -81,14 +81,15 @@ jobs:
 
           test -f "$PATCH_B64"
           tr -d '[:space:]' < "$PATCH_B64" | base64 --decode > "$PATCH_ARCHIVE"
-          echo "56993a1616fa14b0d269ad863f573911b5b9c84a7833cbc697c32d3da857917b  $PATCH_ARCHIVE" | sha256sum -c -
+          echo "06cadeb30ad668bc809ca35540d07dcec0b221aa5adc725423b248c58ba7a9dc  $PATCH_ARCHIVE" | sha256sum -c -
           tar -xzf "$PATCH_ARCHIVE" -C "$PROJECT_PATH"
 
           MAIN_ACTIVITY="$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/MainActivity.kt"
           test -f "$MAIN_ACTIVITY"
           grep -q '^import android.app.role.RoleManager$' "$MAIN_ACTIVITY"
           grep -q 'FLAG_SHOW_WALLPAPER' "$MAIN_ACTIVITY"
-          grep -q 'MAX_VISIBLE_NODES = 48' "$MAIN_ACTIVITY"
+          grep -q 'MAX_VISIBLE_NODES = 24' "$MAIN_ACTIVITY"
+          grep -q 'fontSize = 17.sp' "$MAIN_ACTIVITY"
           grep -q 'dynamicDarkColorScheme' "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/ui/theme/Theme.kt"
           test -f "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/model/IconPackOption.kt"
 
