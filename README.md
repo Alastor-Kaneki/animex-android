@@ -9,5 +9,4 @@ Native Android WebView wrapper for https://animex.one/
 - Built-in ad/tracker host filtering and DOM cleanup
 - Built-in popup and pop-under blocking
 - Full-screen video, downloads, cookies, file picker, and back navigation
-- User-provided logo used for launcher icon and centered black splash screen
 - Release signing: APK Signature Scheme v1, v2, and v3
