@@ -86,10 +86,23 @@ jobs:
 
           MAIN_ACTIVITY="$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/MainActivity.kt"
           test -f "$MAIN_ACTIVITY"
+
+          # Horizontal projection already follows the finger. Invert the
+          # vertical pitch mapping so up/down and diagonal swipes also track
+          # the finger exactly, including post-release momentum.
+          sed -i \
+            's/pitch = (pitch + delta \* 0\.0030f)/pitch = (pitch - delta * 0.0030f)/' \
+            "$MAIN_ACTIVITY"
+          sed -i \
+            's/pitch = (pitch + dragAmount\.y \* 0\.0030f)/pitch = (pitch - dragAmount.y * 0.0030f)/' \
+            "$MAIN_ACTIVITY"
+
           grep -q '^import android.app.role.RoleManager$' "$MAIN_ACTIVITY"
           grep -q 'FLAG_SHOW_WALLPAPER' "$MAIN_ACTIVITY"
           grep -q 'MAX_VISIBLE_NODES = 24' "$MAIN_ACTIVITY"
           grep -q 'fontSize = 17.sp' "$MAIN_ACTIVITY"
+          grep -q 'pitch = (pitch - delta \* 0.0030f)' "$MAIN_ACTIVITY"
+          grep -q 'pitch = (pitch - dragAmount.y \* 0.0030f)' "$MAIN_ACTIVITY"
           grep -q 'dynamicDarkColorScheme' "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/ui/theme/Theme.kt"
           test -f "$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/model/IconPackOption.kt"
 
