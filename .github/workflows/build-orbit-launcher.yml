@@ -51,10 +51,8 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # Do not use gradle/actions/setup-gradle here. That action scans every
-      # wrapper JAR in the repository and rejects Orbit Launcher's custom
-      # Termux bootstrap wrapper before the build can begin. Install the
-      # official Gradle distribution directly instead.
+      # Direct installation avoids wrapper validation rejecting the custom
+      # Termux bootstrap wrapper stored with the project.
       - name: Install Gradle 8.13
         shell: bash
         run: |
@@ -71,7 +69,7 @@ jobs:
           echo "$GRADLE_DIR/bin" >> "$GITHUB_PATH"
           "$GRADLE_DIR/bin/gradle" --version
 
-      - name: Validate project
+      - name: Validate and patch project
         shell: bash
         env:
           PROJECT_PATH: ${{ inputs.project_path }}
@@ -79,6 +77,28 @@ jobs:
           set -euo pipefail
           test -f "$PROJECT_PATH/settings.gradle.kts"
           test -f "$PROJECT_PATH/app/build.gradle.kts"
+
+          MAIN_ACTIVITY="$PROJECT_PATH/app/src/main/java/com/alastor/orbitlauncher/MainActivity.kt"
+          test -f "$MAIN_ACTIVITY"
+
+          # Correct the Android framework package. RoleManager was introduced
+          # under android.app.role, not android.app.
+          sed -i \
+            's/^import android\.app\.RoleManager$/import android.app.role.RoleManager/' \
+            "$MAIN_ACTIVITY"
+
+          # Modifier.weight is supplied by RowScope/ColumnScope. Explicitly
+          # importing this package-level symbol selects an internal API with
+          # current Compose releases.
+          sed -i \
+            '/^import androidx\.compose\.foundation\.layout\.weight$/d' \
+            "$MAIN_ACTIVITY"
+
+          grep -q '^import android.app.role.RoleManager$' "$MAIN_ACTIVITY"
+          if grep -q '^import androidx.compose.foundation.layout.weight$' "$MAIN_ACTIVITY"; then
+            echo "The invalid weight import is still present." >&2
+            exit 1
+          fi
 
       - name: Build APK
         id: build
