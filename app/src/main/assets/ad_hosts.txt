@@ -1,5 +1,6 @@
 # Animex built-in advertising, pop-under, tracking, and redirect host filters.
 # One host per line. Each listed host and all of its subdomains are blocked.
+# This source-controlled list is packaged directly into the Animex APK.
 doubleclick.net
 googlesyndication.com
 googleadservices.com
