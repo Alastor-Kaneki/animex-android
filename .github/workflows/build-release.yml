@@ -10,14 +10,23 @@ on:
       - settings.gradle
       - gradle.properties
       - .github/workflows/build-release.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - app/**
+      - build.gradle
+      - settings.gradle
+      - gradle.properties
+      - .github/workflows/build-release.yml
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: animex-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: animex-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-release:
@@ -87,8 +96,8 @@ jobs:
           VERSION_NAME="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -n 1)"
           test -n "$VERSION_NAME"
 
-          RELEASE_APK="Animex-v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}.apk"
-          TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
+          RELEASE_APK="Animex-v${VERSION_NAME}.apk"
+          TAG="v${VERSION_NAME}"
 
           cp "$SOURCE_APK" "$RELEASE_APK"
 
@@ -114,7 +123,8 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create GitHub release
+      - name: Publish stable GitHub release
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,7 +137,7 @@ jobs:
           cat > release-notes.md <<EOF
           ## Animex ${VERSION}
 
-          Signed Android release built from commit \`${GITHUB_SHA}\`.
+          Signed Android release built from commit \`${GITHUB_SHA}\` by workflow run ${GITHUB_RUN_NUMBER}.
 
           - Package: \`one.animex\`
           - Minimum Android: 6.0 / API 23
@@ -138,10 +148,17 @@ jobs:
           Verify the APK with the attached \`SHA256SUMS.txt\` file.
           EOF
 
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          elif git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git push origin ":refs/tags/$TAG"
+          fi
+
           gh release create "$TAG" \
             "$APK" \
             SHA256SUMS.txt \
             build.log \
             --target "$GITHUB_SHA" \
             --title "Animex ${VERSION} — Build ${GITHUB_RUN_NUMBER}" \
-            --notes-file release-notes.md
+            --notes-file release-notes.md \
+            --latest
