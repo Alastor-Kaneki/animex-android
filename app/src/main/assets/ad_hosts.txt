@@ -1,5 +1,5 @@
-# Common advertising, pop-under, tracking, and redirect hosts.
-# One host per line. Subdomains are blocked automatically.
+# Animex built-in advertising, pop-under, tracking, and redirect host filters.
+# One host per line. Each listed host and all of its subdomains are blocked.
 doubleclick.net
 googlesyndication.com
 googleadservices.com
