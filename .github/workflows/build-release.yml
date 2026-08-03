@@ -1,0 +1,147 @@
+name: Build and Release Animex APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app/**
+      - build.gradle
+      - settings.gradle
+      - gradle.properties
+      - .github/workflows/build-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: animex-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out Animex
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore release signing keystore
+        shell: bash
+        env:
+          ANIMEX_KEYSTORE_B64: ${{ secrets.ANIMEX_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${ANIMEX_KEYSTORE_B64:-}" ]]; then
+            echo "The ANIMEX_KEYSTORE_B64 repository secret is missing." >&2
+            exit 1
+          fi
+
+          printf '%s' "$ANIMEX_KEYSTORE_B64" | base64 --decode > animex-release.jks
+          test -s animex-release.jks
+
+          keytool -list \
+            -keystore animex-release.jks \
+            -storepass 'AnimeX-Release-2026' \
+            -alias animex >/dev/null
+
+      - name: Verify Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME/platforms/android-35"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
+
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            clean assembleRelease 2>&1 | tee build.log
+
+      - name: Prepare and verify release files
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+          test -f "$SOURCE_APK"
+
+          VERSION_NAME="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -n 1)"
+          test -n "$VERSION_NAME"
+
+          RELEASE_APK="Animex-v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}.apk"
+          TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
+
+          cp "$SOURCE_APK" "$RELEASE_APK"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose \
+            --print-certs \
+            "$RELEASE_APK"
+
+          sha256sum "$RELEASE_APK" > SHA256SUMS.txt
+
+          echo "version=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk=$RELEASE_APK" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Animex-v${{ steps.release.outputs.version }}-build.${{ github.run_number }}
+          path: |
+            ${{ steps.release.outputs.apk }}
+            SHA256SUMS.txt
+            build.log
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          APK: ${{ steps.release.outputs.apk }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          cat > release-notes.md <<EOF
+          ## Animex ${VERSION}
+
+          Signed Android release built from commit \`${GITHUB_SHA}\`.
+
+          - Package: \`one.animex\`
+          - Minimum Android: 6.0 / API 23
+          - Target Android: 15 / API 35
+          - Signing: APK Signature Scheme v1, v2, and v3
+          - Includes native ad/tracker request filtering, popup protection, DOM ad cleanup, immersive full-screen video, downloads, cookies, file uploads, and Android back navigation.
+
+          Verify the APK with the attached \`SHA256SUMS.txt\` file.
+          EOF
+
+          gh release create "$TAG" \
+            "$APK" \
+            SHA256SUMS.txt \
+            build.log \
+            --target "$GITHUB_SHA" \
+            --title "Animex ${VERSION} — Build ${GITHUB_RUN_NUMBER}" \
+            --notes-file release-notes.md
