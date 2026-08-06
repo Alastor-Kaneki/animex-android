@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'one.animex.plugins'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'one.animex.plugins'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '0.1-alpha'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('../animex-release.jks')
+            storePassword 'AnimeX-Release-2026'
+            keyAlias 'animex'
+            keyPassword 'AnimeX-Release-2026'
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+            enableV4Signing false
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
