@@ -25,7 +25,7 @@
         </activity>
 
         <service
-            android:name=".MainActivity$EpisodeDownloadService"
+            android:name=".EpisodeDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>
