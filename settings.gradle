@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = 'Animex'
 include ':app'
+include ':nativeapp'
