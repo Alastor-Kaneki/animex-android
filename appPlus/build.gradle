@@ -10,8 +10,14 @@ android {
         applicationId 'one.animex.plus'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1-gecko-test'
+        versionCode 2
+        versionName '0.2-gecko-arm64'
+
+        // Physical-device build: 64-bit ARM only.
+        // This removes the 32-bit Gecko child executable/libs entirely.
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
     }
 
     buildTypes {
@@ -31,7 +37,7 @@ android {
 }
 
 dependencies {
-    // GeckoView stable channel. GitHub Actions resolves the newest stable build
-    // available from Mozilla's Maven repository at build time.
-    implementation 'org.mozilla.geckoview:geckoview:latest.release'
+    // Pin the GeckoView build that the first working test compiled against,
+    // rather than allowing latest.release to change underneath us.
+    implementation 'org.mozilla.geckoview:geckoview:153.0.20260810162159'
 }
