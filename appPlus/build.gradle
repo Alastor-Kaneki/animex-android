@@ -10,11 +10,10 @@ android {
         applicationId 'one.animex.plus'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '0.2-gecko-arm64'
+        versionCode 3
+        versionName '0.3-gecko-arm64-native'
 
         // Physical-device build: 64-bit ARM only.
-        // This removes the 32-bit Gecko child executable/libs entirely.
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -36,13 +35,14 @@ android {
     }
 }
 
-// Reuse the exact launcher artwork from the original Animex module.
-// Copying at build time keeps Animex+ visually identical without maintaining
-// a second, drifting copy of the icon files.
-tasks.register('syncAnimexLauncherIcon', Copy) {
+// Reuse the exact Animex launcher + splash artwork so Animex+ feels like the
+// same native app instead of a separate browser wrapper.
+tasks.register('syncAnimexVisuals', Copy) {
     from("${rootProject.projectDir}/app/src/main/res") {
         include 'drawable/ic_launcher_background.xml'
         include 'drawable/ic_launcher_foreground.png'
+        include 'drawable/splash_screen.xml'
+        include 'drawable-nodpi/splash_logo.png'
         include 'mipmap-anydpi-v26/ic_launcher.xml'
         include 'mipmap-anydpi-v26/ic_launcher_round.xml'
         include 'mipmap-mdpi/ic_launcher.png'
@@ -60,11 +60,10 @@ tasks.register('syncAnimexLauncherIcon', Copy) {
 }
 
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('syncAnimexLauncherIcon')
+    dependsOn tasks.named('syncAnimexVisuals')
 }
 
 dependencies {
-    // Pin the GeckoView build that the first working test compiled against,
-    // rather than allowing latest.release to change underneath us.
+    // Pinned for reproducible builds and known arm64 compatibility.
     implementation 'org.mozilla.geckoview:geckoview:153.0.20260810162159'
 }
