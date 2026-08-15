@@ -5,51 +5,77 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import org.mozilla.geckoview.AllowOrDeny;
+import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
+import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoSession;
-import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.WebExtension;
+import org.mozilla.geckoview.WebExtensionController;
+
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final String HOME_URL = "https://animex.one/";
-    private static final String UBO_LOCATION = "resource://android/assets/ublock/";
     private static final String UBO_ID = "uBlock0@raymondhill.net";
-
-    // Hidden hardware shortcut: 3 distinct Volume Up presses inside this window.
-    private static final long VOLUME_UP_TRIGGER_WINDOW_MS = 1500L;
+    private static final String UBO_XPI = "resource://android/assets/ublock/uBlockOrigin.xpi";
+    private static final int UBO_TRIGGER_PRESSES = 3;
+    private static final long UBO_TRIGGER_WINDOW_MS = 1500L;
 
     private static GeckoRuntime runtime;
 
-    private GeckoView geckoView;
+    private NoZoomGeckoView geckoView;
     private GeckoSession session;
     private WebExtension uBlockOrigin;
-    private ProgressBar progress;
+    private ProgressBar pageProgress;
+    private View launchOverlay;
+    private TextView launchStatus;
     private boolean canGoBack;
-
+    private boolean firstPagePainted;
     private int volumeUpPressCount;
     private long firstVolumeUpPressAt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setTheme(R.style.Theme_AnimexPlus);
         super.onCreate(savedInstanceState);
 
-        buildUi();
+        buildNativeShell();
         hideSystemUi();
 
         if (runtime == null) {
-            runtime = GeckoRuntime.create(this);
+            GeckoRuntimeSettings settings = new GeckoRuntimeSettings.Builder()
+                    .extensionsProcessEnabled(true)
+                    .forceUserScalableEnabled(false)
+                    .doubleTapZoomingEnabled(false)
+                    .inputAutoZoomEnabled(false)
+                    .build();
+            runtime = GeckoRuntime.create(getApplicationContext(), settings);
+            runtime.warmUp();
         }
 
-        session = new GeckoSession();
+        configureExtensionInstaller();
+
+        GeckoSessionSettings sessionSettings = new GeckoSessionSettings.Builder()
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .displayMode(GeckoSessionSettings.DISPLAY_MODE_STANDALONE)
+                .build();
+
+        session = new GeckoSession(sessionSettings);
         session.setContentDelegate(new GeckoSession.ContentDelegate() {
             @Override
             public void onFullScreen(GeckoSession session, boolean fullScreen) {
@@ -58,9 +84,10 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onCrash(GeckoSession crashedSession) {
+                showNativeStatus("Restoring Animex…");
                 Toast.makeText(MainActivity.this,
-                        "Gecko content process crashed — reopening Animex",
-                        Toast.LENGTH_LONG).show();
+                        "Animex engine restarted",
+                        Toast.LENGTH_SHORT).show();
                 crashedSession.open(runtime);
                 crashedSession.loadUri(HOME_URL);
             }
@@ -76,24 +103,39 @@ public final class MainActivity extends Activity {
         session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
             @Override
             public void onPageStart(GeckoSession session, String url) {
-                progress.setVisibility(View.VISIBLE);
-                progress.setProgress(0);
+                pageProgress.setVisibility(View.VISIBLE);
+                pageProgress.setProgress(2);
             }
 
             @Override
             public void onProgressChange(GeckoSession session, int value) {
-                progress.setProgress(value);
+                pageProgress.setProgress(value);
             }
 
             @Override
             public void onPageStop(GeckoSession session, boolean success) {
-                progress.setProgress(100);
-                progress.setVisibility(View.GONE);
+                pageProgress.setProgress(100);
+                pageProgress.animate()
+                        .alpha(0f)
+                        .setDuration(120)
+                        .withEndAction(() -> {
+                            pageProgress.setVisibility(View.GONE);
+                            pageProgress.setAlpha(1f);
+                        })
+                        .start();
+
+                if (!firstPagePainted && success) {
+                    firstPagePainted = true;
+                    hideLaunchOverlay();
+                } else if (!firstPagePainted) {
+                    showNativeStatus("Couldn't load Animex");
+                }
             }
         });
 
         session.open(runtime);
         geckoView.setSession(session);
+        geckoView.coverUntilFirstPaint(Color.BLACK);
 
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -101,49 +143,172 @@ public final class MainActivity extends Activity {
                     this::handleBack);
         }
 
-        installUBlockAndLaunch();
+        loadUBlockThenLaunch();
     }
 
-    private void buildUi() {
+    private void buildNativeShell() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        geckoView = new GeckoView(this);
+        geckoView = new NoZoomGeckoView(this);
         geckoView.setBackgroundColor(Color.BLACK);
         root.addView(geckoView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progress.setMax(100);
-        progress.setVisibility(View.GONE);
+        pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        pageProgress.setMax(100);
+        pageProgress.setVisibility(View.GONE);
         FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(3));
-        root.addView(progress, progressParams);
+                dp(2));
+        progressParams.gravity = Gravity.TOP;
+        root.addView(pageProgress, progressParams);
+
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.BLACK);
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.splash_logo);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(240), dp(120));
+        logoParams.gravity = Gravity.CENTER;
+        logoParams.bottomMargin = dp(24);
+        overlay.addView(logo, logoParams);
+
+        ProgressBar spinner = new ProgressBar(this);
+        FrameLayout.LayoutParams spinnerParams = new FrameLayout.LayoutParams(dp(28), dp(28));
+        spinnerParams.gravity = Gravity.CENTER;
+        spinnerParams.topMargin = dp(112);
+        overlay.addView(spinner, spinnerParams);
+
+        launchStatus = new TextView(this);
+        launchStatus.setText("Starting Animex…");
+        launchStatus.setTextColor(0xFFBDBDBD);
+        launchStatus.setTextSize(13f);
+        launchStatus.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusParams.gravity = Gravity.CENTER;
+        statusParams.topMargin = dp(172);
+        overlay.addView(launchStatus, statusParams);
+
+        launchOverlay = overlay;
+        root.addView(overlay, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
 
         setContentView(root);
     }
 
-    private void installUBlockAndLaunch() {
-        runtime.getWebExtensionController()
-                .ensureBuiltIn(UBO_LOCATION, UBO_ID)
+    private void configureExtensionInstaller() {
+        WebExtensionController controller = runtime.getWebExtensionController();
+        controller.setPromptDelegate(new WebExtensionController.PromptDelegate() {
+            @Override
+            public GeckoResult<WebExtension.PermissionPromptResponse> onInstallPromptRequest(
+                    WebExtension extension,
+                    String[] permissions,
+                    String[] origins,
+                    String[] dataCollectionPermissions) {
+                if (UBO_ID.equals(extension.id)) {
+                    return GeckoResult.fromValue(
+                            new WebExtension.PermissionPromptResponse(true, false, false));
+                }
+                return GeckoResult.fromValue(
+                        new WebExtension.PermissionPromptResponse(false, false, false));
+            }
+
+            @Override
+            public GeckoResult<AllowOrDeny> onOptionalPrompt(
+                    WebExtension extension,
+                    String[] permissions,
+                    String[] origins,
+                    String[] dataCollectionPermissions) {
+                return UBO_ID.equals(extension.id) ? GeckoResult.allow() : GeckoResult.deny();
+            }
+
+            @Override
+            public GeckoResult<AllowOrDeny> onUpdatePrompt(
+                    WebExtension extension,
+                    String[] newPermissions,
+                    String[] newOrigins,
+                    String[] newDataCollectionPermissions) {
+                return UBO_ID.equals(extension.id) ? GeckoResult.allow() : GeckoResult.deny();
+            }
+        });
+    }
+
+    private void loadUBlockThenLaunch() {
+        showNativeStatus("Starting privacy engine…");
+        WebExtensionController controller = runtime.getWebExtensionController();
+        controller.list().accept(
+                extensions -> {
+                    WebExtension installed = findUBlock(extensions);
+                    if (installed != null) {
+                        if (installed.metaData.enabled) {
+                            onUBlockReady(installed);
+                        } else {
+                            controller.enable(installed, WebExtensionController.EnableSource.USER)
+                                    .accept(this::onUBlockReady, error -> installSignedUBlock(controller));
+                        }
+                    } else {
+                        installSignedUBlock(controller);
+                    }
+                },
+                error -> installSignedUBlock(controller));
+    }
+
+    private WebExtension findUBlock(List<WebExtension> extensions) {
+        if (extensions == null) {
+            return null;
+        }
+        for (WebExtension extension : extensions) {
+            if (extension != null && UBO_ID.equals(extension.id)) {
+                return extension;
+            }
+        }
+        return null;
+    }
+
+    private void installSignedUBlock(WebExtensionController controller) {
+        showNativeStatus("Enabling uBlock Origin…");
+        controller.install(UBO_XPI, WebExtensionController.INSTALLATION_METHOD_FROM_FILE)
                 .accept(
-                        extension -> {
-                            uBlockOrigin = extension;
-                            Toast.makeText(
-                                    MainActivity.this,
-                                    "uBlock Origin " + extension.metaData.version + " active",
-                                    Toast.LENGTH_SHORT).show();
-                            session.loadUri(HOME_URL);
-                        },
+                        this::onUBlockReady,
                         error -> {
+                            String detail = error.getMessage();
+                            if (error instanceof WebExtension.InstallException) {
+                                WebExtension.InstallException installError =
+                                        (WebExtension.InstallException) error;
+                                detail = "code " + installError.code;
+                            }
                             Toast.makeText(
                                     MainActivity.this,
-                                    "uBlock Origin failed to load: " + error.getMessage(),
+                                    "uBlock Origin couldn't start (" + detail + ")",
                                     Toast.LENGTH_LONG).show();
+                            showNativeStatus("Opening Animex…");
                             session.loadUri(HOME_URL);
                         });
+    }
+
+    private void onUBlockReady(WebExtension extension) {
+        uBlockOrigin = extension;
+        showNativeStatus("Opening Animex…");
+        session.loadUri(HOME_URL);
+    }
+
+    private void openUBlockDashboard() {
+        if (uBlockOrigin == null) {
+            Toast.makeText(this, "uBlock Origin isn't ready", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String options = uBlockOrigin.metaData.optionsPageUrl;
+        if (options == null || options.isEmpty()) {
+            options = uBlockOrigin.metaData.baseUrl + "dashboard.html";
+        }
+        session.loadUri(options);
     }
 
     @Override
@@ -153,41 +318,40 @@ public final class MainActivity extends Activity {
                 && event.getRepeatCount() == 0) {
             registerVolumeUpPress();
         }
-
-        // Do not consume the event: hardware volume still changes normally.
         return super.dispatchKeyEvent(event);
     }
 
     private void registerVolumeUpPress() {
         long now = SystemClock.elapsedRealtime();
-
-        if (volumeUpPressCount == 0
-                || now - firstVolumeUpPressAt > VOLUME_UP_TRIGGER_WINDOW_MS) {
+        if (volumeUpPressCount == 0 || now - firstVolumeUpPressAt > UBO_TRIGGER_WINDOW_MS) {
             volumeUpPressCount = 1;
             firstVolumeUpPressAt = now;
             return;
         }
 
         volumeUpPressCount++;
-
-        if (volumeUpPressCount >= 3) {
+        if (volumeUpPressCount >= UBO_TRIGGER_PRESSES) {
             volumeUpPressCount = 0;
             firstVolumeUpPressAt = 0L;
             openUBlockDashboard();
         }
     }
 
-    private void openUBlockDashboard() {
-        if (uBlockOrigin == null || session == null) {
-            Toast.makeText(this, "uBlock Origin is still loading", Toast.LENGTH_SHORT).show();
+    private void showNativeStatus(String text) {
+        if (launchStatus != null) {
+            launchStatus.setText(text);
+        }
+    }
+
+    private void hideLaunchOverlay() {
+        if (launchOverlay == null || launchOverlay.getVisibility() != View.VISIBLE) {
             return;
         }
-
-        String options = uBlockOrigin.metaData.optionsPageUrl;
-        if (options == null || options.isEmpty()) {
-            options = uBlockOrigin.metaData.baseUrl + "dashboard.html";
-        }
-        session.loadUri(options);
+        launchOverlay.animate()
+                .alpha(0f)
+                .setDuration(180)
+                .withEndAction(() -> launchOverlay.setVisibility(View.GONE))
+                .start();
     }
 
     private void handleBack() {
