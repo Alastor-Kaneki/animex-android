@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -22,6 +24,9 @@ public final class MainActivity extends Activity {
     private static final String UBO_LOCATION = "resource://android/assets/ublock/";
     private static final String UBO_ID = "uBlock0@raymondhill.net";
 
+    // Hidden hardware shortcut: 3 distinct Volume Up presses inside this window.
+    private static final long VOLUME_UP_TRIGGER_WINDOW_MS = 1500L;
+
     private static GeckoRuntime runtime;
 
     private GeckoView geckoView;
@@ -29,6 +34,9 @@ public final class MainActivity extends Activity {
     private WebExtension uBlockOrigin;
     private ProgressBar progress;
     private boolean canGoBack;
+
+    private int volumeUpPressCount;
+    private long firstVolumeUpPressAt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -136,6 +144,50 @@ public final class MainActivity extends Activity {
                                     Toast.LENGTH_LONG).show();
                             session.loadUri(HOME_URL);
                         });
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP
+                && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0) {
+            registerVolumeUpPress();
+        }
+
+        // Do not consume the event: hardware volume still changes normally.
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void registerVolumeUpPress() {
+        long now = SystemClock.elapsedRealtime();
+
+        if (volumeUpPressCount == 0
+                || now - firstVolumeUpPressAt > VOLUME_UP_TRIGGER_WINDOW_MS) {
+            volumeUpPressCount = 1;
+            firstVolumeUpPressAt = now;
+            return;
+        }
+
+        volumeUpPressCount++;
+
+        if (volumeUpPressCount >= 3) {
+            volumeUpPressCount = 0;
+            firstVolumeUpPressAt = 0L;
+            openUBlockDashboard();
+        }
+    }
+
+    private void openUBlockDashboard() {
+        if (uBlockOrigin == null || session == null) {
+            Toast.makeText(this, "uBlock Origin is still loading", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String options = uBlockOrigin.metaData.optionsPageUrl;
+        if (options == null || options.isEmpty()) {
+            options = uBlockOrigin.metaData.baseUrl + "dashboard.html";
+        }
+        session.loadUri(options);
     }
 
     private void handleBack() {
