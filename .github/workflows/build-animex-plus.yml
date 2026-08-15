@@ -39,22 +39,21 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build uBlock Origin 1.72.0 for Firefox/Gecko
+      - name: Bundle official signed uBlock Origin 1.72.0 XPI
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch 1.72.0 https://github.com/gorhill/uBlock.git /tmp/uBlock
-          make -C /tmp/uBlock firefox
-
-          test -f /tmp/uBlock/dist/build/uBlock0.firefox/manifest.json
-          grep -q 'uBlock0@raymondhill.net' /tmp/uBlock/dist/build/uBlock0.firefox/manifest.json
+          UBO_URL="https://github.com/gorhill/uBlock/releases/download/1.72.0/uBlock0_1.72.0.firefox.signed.xpi"
+          UBO_SHA256="79cd426ab599801c59dfe9895cb4b8002faf3da059f7111c2721ac10168a3b64"
 
           rm -rf appPlus/src/main/assets/ublock
           mkdir -p appPlus/src/main/assets/ublock
-          cp -a /tmp/uBlock/dist/build/uBlock0.firefox/. appPlus/src/main/assets/ublock/
+          curl --fail --location --retry 3 "$UBO_URL" \
+            --output appPlus/src/main/assets/ublock/uBlockOrigin.xpi
 
-          echo "Bundled uBO manifest:"
-          grep -E '"name"|"version"|"id"' appPlus/src/main/assets/ublock/manifest.json | head -20
+          echo "$UBO_SHA256  appPlus/src/main/assets/ublock/uBlockOrigin.xpi" | sha256sum -c -
+          unzip -p appPlus/src/main/assets/ublock/uBlockOrigin.xpi manifest.json \
+            | grep -q 'uBlock0@raymondhill.net'
 
       - name: Build Animex+ debug APK
         shell: bash
@@ -73,11 +72,18 @@ jobs:
           SOURCE="appPlus/build/outputs/apk/debug/appPlus-debug.apk"
           test -f "$SOURCE"
 
-          OUT="AnimexPlus-0.1-gecko-uBO-1.72.0.apk"
+          OUT="AnimexPlus-0.3-arm64-native-uBO.apk"
           cp "$SOURCE" "$OUT"
           sha256sum "$OUT" > AnimexPlus-SHA256SUMS.txt
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$OUT"
+
+          unzip -l "$OUT" | grep -q 'assets/ublock/uBlockOrigin.xpi'
+          unzip -l "$OUT" | grep -q 'lib/arm64-v8a/'
+          if unzip -l "$OUT" | grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/'; then
+            echo "Unexpected non-arm64 native libraries found" >&2
+            exit 1
+          fi
 
           echo "path=$OUT" >> "$GITHUB_OUTPUT"
 
