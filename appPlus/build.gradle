@@ -1,0 +1,37 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'one.animex.plus'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'one.animex.plus'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '0.1-gecko-test'
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ''
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // GeckoView stable channel. GitHub Actions resolves the newest stable build
+    // available from Mozilla's Maven repository at build time.
+    implementation 'org.mozilla.geckoview:geckoview:latest.release'
+}
