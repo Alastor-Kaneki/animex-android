@@ -36,6 +36,33 @@ android {
     }
 }
 
+// Reuse the exact launcher artwork from the original Animex module.
+// Copying at build time keeps Animex+ visually identical without maintaining
+// a second, drifting copy of the icon files.
+tasks.register('syncAnimexLauncherIcon', Copy) {
+    from("${rootProject.projectDir}/app/src/main/res") {
+        include 'drawable/ic_launcher_background.xml'
+        include 'drawable/ic_launcher_foreground.png'
+        include 'mipmap-anydpi-v26/ic_launcher.xml'
+        include 'mipmap-anydpi-v26/ic_launcher_round.xml'
+        include 'mipmap-mdpi/ic_launcher.png'
+        include 'mipmap-mdpi/ic_launcher_round.png'
+        include 'mipmap-hdpi/ic_launcher.png'
+        include 'mipmap-hdpi/ic_launcher_round.png'
+        include 'mipmap-xhdpi/ic_launcher.png'
+        include 'mipmap-xhdpi/ic_launcher_round.png'
+        include 'mipmap-xxhdpi/ic_launcher.png'
+        include 'mipmap-xxhdpi/ic_launcher_round.png'
+        include 'mipmap-xxxhdpi/ic_launcher.png'
+        include 'mipmap-xxxhdpi/ic_launcher_round.png'
+    }
+    into("${projectDir}/src/main/res")
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('syncAnimexLauncherIcon')
+}
+
 dependencies {
     // Pin the GeckoView build that the first working test compiled against,
     // rather than allowing latest.release to change underneath us.
