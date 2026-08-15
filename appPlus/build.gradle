@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'one.animex.plus'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'one.animex.plus'
