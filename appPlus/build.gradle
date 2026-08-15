@@ -43,6 +43,7 @@ tasks.register('syncAnimexVisuals', Copy) {
         include 'drawable/ic_launcher_foreground.png'
         include 'drawable/splash_screen.xml'
         include 'drawable-nodpi/splash_logo.png'
+        include 'values/colors.xml'
         include 'mipmap-anydpi-v26/ic_launcher.xml'
         include 'mipmap-anydpi-v26/ic_launcher_round.xml'
         include 'mipmap-mdpi/ic_launcher.png'
