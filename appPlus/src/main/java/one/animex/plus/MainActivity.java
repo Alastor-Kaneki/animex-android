@@ -4,14 +4,11 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.widget.Button;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
@@ -48,11 +45,7 @@ public final class MainActivity extends Activity {
         session.setContentDelegate(new GeckoSession.ContentDelegate() {
             @Override
             public void onFullScreen(GeckoSession session, boolean fullScreen) {
-                if (fullScreen) {
-                    hideSystemUi();
-                } else {
-                    hideSystemUi();
-                }
+                hideSystemUi();
             }
 
             @Override
@@ -119,58 +112,9 @@ public final class MainActivity extends Activity {
         FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(3));
-        progressParams.gravity = Gravity.TOP;
         root.addView(progress, progressParams);
 
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setGravity(Gravity.CENTER_VERTICAL);
-        controls.setAlpha(0.72f);
-
-        Button home = controlButton("⌂");
-        home.setContentDescription("Animex home");
-        home.setOnClickListener(v -> session.loadUri(HOME_URL));
-
-        Button reload = controlButton("↻");
-        reload.setContentDescription("Reload");
-        reload.setOnClickListener(v -> session.reload());
-
-        Button ubo = controlButton("uBO");
-        ubo.setContentDescription("Open uBlock Origin dashboard");
-        ubo.setOnClickListener(v -> openUBlockDashboard());
-        ubo.setOnLongClickListener(v -> {
-            showUBlockStatus();
-            return true;
-        });
-
-        controls.addView(home);
-        controls.addView(reload);
-        controls.addView(ubo);
-
-        FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        controlParams.gravity = Gravity.TOP | Gravity.END;
-        controlParams.topMargin = dp(8);
-        controlParams.rightMargin = dp(8);
-        root.addView(controls, controlParams);
-
         setContentView(root);
-    }
-
-    private Button controlButton(String text) {
-        Button button = new Button(this);
-        button.setText(text);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(12f);
-        button.setAllCaps(false);
-        button.setMinWidth(dp(48));
-        button.setMinimumWidth(dp(48));
-        button.setMinHeight(dp(42));
-        button.setMinimumHeight(dp(42));
-        button.setPadding(dp(8), 0, dp(8), 0);
-        button.setBackgroundColor(0xFF111111);
-        return button;
     }
 
     private void installUBlockAndLaunch() {
@@ -192,31 +136,6 @@ public final class MainActivity extends Activity {
                                     Toast.LENGTH_LONG).show();
                             session.loadUri(HOME_URL);
                         });
-    }
-
-    private void openUBlockDashboard() {
-        if (uBlockOrigin == null) {
-            Toast.makeText(this, "uBlock Origin is still loading", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String options = uBlockOrigin.metaData.optionsPageUrl;
-        if (options == null || options.isEmpty()) {
-            options = uBlockOrigin.metaData.baseUrl + "dashboard.html";
-        }
-        session.loadUri(options);
-    }
-
-    private void showUBlockStatus() {
-        if (uBlockOrigin == null) {
-            Toast.makeText(this, "uBlock Origin not ready", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Toast.makeText(
-                this,
-                "uBO " + uBlockOrigin.metaData.version + " • "
-                        + (uBlockOrigin.metaData.enabled ? "enabled" : "disabled"),
-                Toast.LENGTH_LONG).show();
     }
 
     private void handleBack() {
