@@ -3,7 +3,6 @@
     <style name="Theme.AnimexPlus.Splash" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowSplashScreenBackground">#000000</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
-        <item name="android:postSplashScreenTheme">@style/Theme.AnimexPlus</item>
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:statusBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
