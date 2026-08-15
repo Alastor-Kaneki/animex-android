@@ -245,15 +245,27 @@ public final class MainActivity extends Activity {
         controller.list().accept(
                 extensions -> {
                     WebExtension installed = findUBlock(extensions);
-                    if (installed != null) {
-                        if (installed.metaData.enabled) {
-                            onUBlockReady(installed);
-                        } else {
-                            controller.enable(installed, WebExtensionController.EnableSource.USER)
-                                    .accept(this::onUBlockReady, error -> installSignedUBlock(controller));
-                        }
-                    } else {
+                    if (installed == null) {
                         installSignedUBlock(controller);
+                        return;
+                    }
+
+                    // Older Animex+ builds used ensureBuiltIn() with an unpacked
+                    // Firefox extension. If that persisted in the Gecko profile,
+                    // remove it so this build can replace it with Mozilla's signed XPI.
+                    if (installed.isBuiltIn) {
+                        showNativeStatus("Upgrading privacy engine…");
+                        controller.uninstall(installed).accept(
+                                ignored -> installSignedUBlock(controller),
+                                error -> installSignedUBlock(controller));
+                        return;
+                    }
+
+                    if (installed.metaData.enabled) {
+                        onUBlockReady(installed);
+                    } else {
+                        controller.enable(installed, WebExtensionController.EnableSource.APP)
+                                .accept(this::onUBlockReady, error -> reinstallSignedUBlock(controller, installed));
                     }
                 },
                 error -> installSignedUBlock(controller));
@@ -269,6 +281,13 @@ public final class MainActivity extends Activity {
             }
         }
         return null;
+    }
+
+    private void reinstallSignedUBlock(WebExtensionController controller, WebExtension installed) {
+        showNativeStatus("Repairing privacy engine…");
+        controller.uninstall(installed).accept(
+                ignored -> installSignedUBlock(controller),
+                error -> installSignedUBlock(controller));
     }
 
     private void installSignedUBlock(WebExtensionController controller) {
