@@ -121,7 +121,7 @@ jobs:
             SHA256SUMS.txt
             build.log
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 3
 
       - name: Publish stable GitHub release
         if: github.event_name != 'pull_request'
