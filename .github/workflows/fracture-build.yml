@@ -7,6 +7,12 @@ on:
     paths:
       - "fracture-build/**"
       - ".github/workflows/fracture-build.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "fracture-build/**"
+      - ".github/workflows/fracture-build.yml"
   workflow_dispatch:
 
 permissions:
