@@ -1,0 +1,96 @@
+name: Build Fracture 0.4
+
+on:
+  push:
+    branches:
+      - fracture-build-0.4.0-alpha.1
+    paths:
+      - "fracture-build/**"
+      - ".github/workflows/fracture-build.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "fracture-build/**"
+      - ".github/workflows/fracture-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out build carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Reconstruct and verify Fracture overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat fracture-build/overlay/part*.txt | base64 -d > /tmp/fracture-overlay.tar.gz
+          echo "883a541626bde22321b005f14711148645b03299c18aaa93f6076fc950caf1e0  /tmp/fracture-overlay.tar.gz" | sha256sum -c -
+
+      - name: Clone exact Stoat base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/stoatchat/for-android.git fracture-src
+          cd fracture-src
+          git checkout 99d6e7a0d8c1bf0e5bcb83c02e5ba96a4e826b08
+
+      - name: Apply Fracture 0.4 overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/fracture-overlay.tar.gz -C fracture-src
+          grep -q 'versionName = "0.4.0-alpha.1"' fracture-src/app/build.gradle.kts
+          grep -q 'applicationId = "dev.alastorkaneki.fracture"' fracture-src/app/build.gradle.kts
+
+      - name: Build debug APK
+        working-directory: fracture-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Collect and verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find fracture-src/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" Fracture-Android-0.4.0-alpha.1-debug.apk
+          sha256sum Fracture-Android-0.4.0-alpha.1-debug.apk > Fracture-Android-0.4.0-alpha.1-debug.apk.sha256
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs Fracture-Android-0.4.0-alpha.1-debug.apk
+          unzip -t Fracture-Android-0.4.0-alpha.1-debug.apk >/dev/null
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fracture-Android-0.4.0-alpha.1-debug
+          path: |
+            Fracture-Android-0.4.0-alpha.1-debug.apk
+            Fracture-Android-0.4.0-alpha.1-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 3
